@@ -2,11 +2,7 @@ import io
 import time
 import wave
 
-try:
-    import numpy as np
-    HAS_NUMPY = True
-except ImportError:
-    HAS_NUMPY = False
+import array
 
 try:
     import pyaudiowpatch as pyaudio
@@ -122,19 +118,18 @@ def record_system_audio_wav(duration_sec=5.5):
             return None, "В наушниках/колонках сейчас тишина (включите видео или звук звонка)"
 
         # Сжимаем стерео 48кГц -> моно 16кГц для быстрой передачи в ИИ
-        if HAS_NUMPY:
-            try:
-                samples = np.frombuffer(raw_pcm, dtype=np.int16)
-                if channels == 2 and len(samples) >= 2:
-                    samples = samples.reshape(-1, 2).mean(axis=1).astype(np.int16)
-                    channels = 1
-                if rate >= 32000:
-                    step = max(1, rate // 16000)
-                    samples = samples[::step]
-                    rate = rate // step
-                raw_pcm = samples.tobytes()
-            except Exception:
-                pass
+        try:
+            samples = array.array('h', raw_pcm)
+            if channels == 2 and len(samples) >= 2:
+                samples = array.array('h', ((samples[i] + samples[i + 1]) // 2 for i in range(0, len(samples) - 1, 2)))
+                channels = 1
+            if rate >= 32000:
+                step = max(1, rate // 16000)
+                samples = samples[::step]
+                rate = rate // step
+            raw_pcm = samples.tobytes()
+        except Exception:
+            pass
 
         wav_buffer = io.BytesIO()
         with wave.open(wav_buffer, "wb") as wf:
