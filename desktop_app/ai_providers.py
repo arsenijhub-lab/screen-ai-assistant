@@ -65,12 +65,13 @@ CRYPTO_SYSTEM_PROMPT = """
 """
 
 GEMINI_FALLBACK_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
+    "gemini-3.5-flash",
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+    "gemini-3.8-flash",
+    "gemini-flash-latest",
     "gemini-1.5-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-3.5-flash-lite",
-    "gemini-3.8-flash"
+    "gemini-2.5-flash"
 ]
 
 class MultiAIProvider:
@@ -189,11 +190,14 @@ class MultiAIProvider:
                         text = self._extract_clean_gemini_text(resp.json())
                         if text:
                             return {"ok": True, "text": text}
-                    elif resp.status_code in (503, 429, 404):
+                    elif resp.status_code in (503, 429):
+                        time.sleep(0.7)
+                        continue
+                    elif resp.status_code == 404:
                         continue
                 except Exception:
                     continue
-            return {"ok": False, "error": "Сервер временно недоступен, повторите через пару секунд"}
+            return {"ok": False, "error": "Google перегружен (503). Повторите через 5 сек (в РФ нужен VPN)"}
 
         elif self.current_provider in ("openai", "deepseek"):
             url = "https://api.openai.com/v1/chat/completions" if self.current_provider == "openai" else "https://api.deepseek.com/v1/chat/completions"
@@ -296,12 +300,15 @@ class MultiAIProvider:
                     text = self._extract_clean_gemini_text(resp.json())
                     if text:
                         return {"ok": True, "text": text}
-                elif resp.status_code in (503, 429, 404):
+                elif resp.status_code in (503, 429):
+                    time.sleep(0.7)
+                    continue
+                elif resp.status_code == 404:
                     continue
             except Exception:
                 continue
 
-        return {"ok": False, "error": "Не удалось распознать звук (сервер перегружен)"}
+        return {"ok": False, "error": "Google перегружен (503). Повторите через 5 сек (в РФ нужен VPN)"}
 
     def analyze_sniper_region(self, jpeg_bytes):
         """
@@ -344,11 +351,14 @@ class MultiAIProvider:
                         text = self._extract_clean_gemini_text(resp.json())
                         if text:
                             return {"ok": True, "text": text}
-                    elif resp.status_code in (503, 429, 404):
+                    elif resp.status_code in (503, 429):
+                        time.sleep(0.7)
+                        continue
+                    elif resp.status_code == 404:
                         continue
                 except Exception:
                     continue
-            return {"ok": False, "error": "Сервер перегружен"}
+            return {"ok": False, "error": "Google перегружен (503). Повторите через 5 сек (в РФ нужен VPN)"}
 
         elif self.current_provider in ("openai", "deepseek"):
             url = "https://api.openai.com/v1/chat/completions" if self.current_provider == "openai" else "https://api.deepseek.com/v1/chat/completions"
@@ -424,11 +434,14 @@ class MultiAIProvider:
                         text = self._extract_clean_gemini_text(resp.json())
                         if text:
                             return {"ok": True, "text": text}
-                    elif resp.status_code in (503, 429, 404):
+                    elif resp.status_code in (503, 429):
+                        time.sleep(0.7)
+                        continue
+                    elif resp.status_code == 404:
                         continue
                 except Exception:
                     continue
-            return {"ok": False, "error": "Сервер перегружен"}
+            return {"ok": False, "error": "Google перегружен (503). Повторите через 5 сек (в РФ нужен VPN)"}
 
         elif self.current_provider in ("openai", "deepseek"):
             url = "https://api.openai.com/v1/chat/completions" if self.current_provider == "openai" else "https://api.deepseek.com/v1/chat/completions"
@@ -493,8 +506,7 @@ class MultiAIProvider:
             }
         }
 
-        last_err = "Сервер перегружен"
-        # Автоматический перебор доступных моделей без ошибки 503
+        last_err = "Серверы Google временно недоступны (503)"
         for model_name in GEMINI_FALLBACK_MODELS:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
@@ -503,9 +515,20 @@ class MultiAIProvider:
                     text = self._extract_clean_gemini_text(resp.json())
                     if text:
                         return {"ok": True, "text": text}
-                elif resp.status_code in (503, 429, 404):
-                    last_err = f"Переключение канала ({resp.status_code})..."
+                elif resp.status_code in (503, 429):
+                    last_err = "Google перегружен (503). Повторите через 5 сек (в РФ/РБ нужен VPN)"
+                    time.sleep(0.7)
                     continue
+                elif resp.status_code == 404:
+                    continue
+                elif resp.status_code == 400:
+                    try:
+                        err_msg = resp.json().get("error", {}).get("message", "")
+                        if "location" in err_msg.lower():
+                            return {"ok": False, "error": "Регион не поддерживается Google. Включите VPN"}
+                    except Exception:
+                        err_msg = resp.text[:50]
+                    return {"ok": False, "error": f"Ошибка 400: {err_msg[:45]}"}
                 else:
                     try:
                         err_msg = resp.json().get("error", {}).get("message", "")
