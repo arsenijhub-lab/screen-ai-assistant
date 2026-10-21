@@ -174,6 +174,61 @@ class LauncherWindow:
         )
         self.lbl_home_quota.pack(anchor="w", pady=(4, 0))
 
+        # Быстрый ввод / статус API-ключа прямо на главной вкладке
+        home_key_box = tk.Frame(card_info, bg="#12151D", padx=10, pady=8, highlightbackground="#3D4558", highlightthickness=1)
+        home_key_box.pack(fill=tk.X, pady=(10, 0))
+
+        lbl_hk_hdr = tk.Label(
+            home_key_box,
+            text="🔑 API-ключ Gemini (Google AI Studio):",
+            fg="#64B5F6",
+            bg="#12151D",
+            font=("Segoe UI", 8, "bold")
+        )
+        lbl_hk_hdr.pack(anchor="w")
+
+        home_key_row = tk.Frame(home_key_box, bg="#12151D")
+        home_key_row.pack(fill=tk.X, pady=(4, 0))
+
+        self.entry_home_key = tk.Entry(
+            home_key_row,
+            bg="#0B0D13",
+            fg="#FFFFFF",
+            insertbackground="#FFFFFF",
+            relief=tk.FLAT,
+            font=("Segoe UI", 9)
+        )
+        self.entry_home_key.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4, padx=(0, 6))
+        current_k = self.engine.ai.get_key(self.engine.ai.current_provider)
+        if current_k:
+            self.entry_home_key.insert(0, current_k)
+        enable_paste_helpers(self.entry_home_key, self.root)
+        self.entry_home_key.bind("<KeyRelease>", lambda e: self.on_home_key_changed())
+        self.entry_home_key.bind("<Return>", lambda e: self.on_save_home_key())
+
+        btn_save_hk = tk.Button(
+            home_key_row,
+            text="Сохранить",
+            bg="#7C4DFF",
+            fg="#FFFFFF",
+            activebackground="#651FFF",
+            activeforeground="#FFFFFF",
+            font=("Segoe UI", 8, "bold"),
+            relief=tk.FLAT,
+            padx=10,
+            command=self.on_save_home_key
+        )
+        btn_save_hk.pack(side=tk.RIGHT)
+
+        self.lbl_home_key_status = tk.Label(
+            home_key_box,
+            text="✓ Ключ подключен" if current_k else "⚠️ Вставьте API-ключ и нажмите «Сохранить»",
+            fg="#00E676" if current_k else "#FFB74D",
+            bg="#12151D",
+            font=("Segoe UI", 8)
+        )
+        self.lbl_home_key_status.pack(anchor="w", pady=(3, 0))
+
         card_guide = tk.Frame(self.tab_home, bg="#1A1D26", padx=16, pady=14, highlightbackground="#2D3342", highlightthickness=1)
         card_guide.pack(fill=tk.BOTH, expand=True)
 
@@ -279,6 +334,8 @@ class LauncherWindow:
 
         # Активируем ПКМ и Ctrl+V поддержку
         enable_paste_helpers(self.entry_api_key, self.root)
+        self.entry_api_key.bind("<KeyRelease>", lambda e: self.on_models_key_changed())
+        self.entry_api_key.bind("<Return>", lambda e: self.on_save_key())
 
         # Кнопка быстрой вставки из буфера обмена
         btn_paste_key = tk.Button(
@@ -361,13 +418,51 @@ class LauncherWindow:
         )
         lbl_en_guide.pack(anchor="w")
 
+    def on_home_key_changed(self):
+        val = self.entry_home_key.get().strip()
+        self.engine.ai.set_key("gemini", val)
+        self.engine.save_config()
+        if hasattr(self, "entry_api_key") and self.engine.ai.current_provider == "gemini":
+            cur_tab_val = self.entry_api_key.get().strip()
+            if cur_tab_val != val:
+                self.entry_api_key.delete(0, tk.END)
+                self.entry_api_key.insert(0, val)
+        if hasattr(self, "lbl_home_key_status"):
+            self.lbl_home_key_status.config(
+                text="✓ Ключ сохранен и активен!" if val else "⚠️ Вставьте API-ключ",
+                fg="#00E676" if val else "#FFB74D"
+            )
+
+    def on_save_home_key(self):
+        val = self.entry_home_key.get().strip()
+        self.engine.ai.set_key("gemini", val)
+        self.engine.save_config()
+        self.on_home_key_changed()
+        messagebox.showinfo("Успешно", "API-ключ Gemini сохранен и готов к работе!")
+
+    def on_models_key_changed(self):
+        val = self.entry_api_key.get().strip()
+        self.engine.ai.set_key(self.engine.ai.current_provider, val)
+        self.engine.save_config()
+        if self.engine.ai.current_provider == "gemini" and hasattr(self, "entry_home_key"):
+            cur_home_val = self.entry_home_key.get().strip()
+            if cur_home_val != val:
+                self.entry_home_key.delete(0, tk.END)
+                self.entry_home_key.insert(0, val)
+            if hasattr(self, "lbl_home_key_status"):
+                self.lbl_home_key_status.config(
+                    text="✓ Ключ сохранен и активен!" if val else "⚠️ Вставьте API-ключ",
+                    fg="#00E676" if val else "#FFB74D"
+                )
+
     def paste_to_api_key(self):
         try:
             val = self.root.clipboard_get().strip()
             if val:
                 self.entry_api_key.delete(0, tk.END)
                 self.entry_api_key.insert(0, val)
-                messagebox.showinfo("Буфер обмена", "Ключ успешно вставлен из буфера!")
+                self.on_models_key_changed()
+                messagebox.showinfo("Буфер обмена", "Ключ успешно вставлен и сохранен!")
             else:
                 messagebox.showwarning("Буфер обмена", "Буфер обмена пуст.")
         except Exception:
@@ -387,6 +482,7 @@ class LauncherWindow:
         val = self.entry_api_key.get().strip()
         self.engine.ai.set_key(self.engine.ai.current_provider, val)
         self.engine.save_config()
+        self.on_models_key_changed()
         messagebox.showinfo("Успешно", f"Ключ для {self.engine.ai.PROVIDERS[self.engine.ai.current_provider]['name']} сохранен!")
 
     # --- Вкладка 3: Горячие клавиши и управление ---

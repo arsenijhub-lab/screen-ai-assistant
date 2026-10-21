@@ -701,12 +701,14 @@ class FloatingOverlayUI:
         # 2. Карточка ответа / криптосигнала
         ans = data.get("answer", "")
         if ans:
-            self.lbl_answer_text.config(text=ans)
-            if not self.answer_frame.winfo_ismapped():
-                self.answer_frame.pack(fill=tk.X, before=self.lbl_summary_header, pady=(0, 6))
+            self.lbl_answer_text.config(text=ans, fg="#FFFFFF")
         else:
-            if self.answer_frame.winfo_ismapped():
-                self.answer_frame.pack_forget()
+            self.lbl_answer_text.config(
+                text="Готов к решению. Нажмите «Экран (Alt+X)» или выделите область «Рамка (Alt+S)»",
+                fg="#A5D6A7"
+            )
+        if not self.answer_frame.winfo_ismapped():
+            self.answer_frame.pack(fill=tk.X, before=self.lbl_summary_header, pady=(0, 6))
 
         # 3. Тезисы видео / анализ
         summary = data.get("summary", "")

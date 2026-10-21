@@ -4,19 +4,11 @@ import requests
 
 SYSTEM_PROMPT = """
 Ты — интеллектуальный мультимодальный экранный ассистент и детектив контента в реальном времени.
-Ты непрерывно смотришь на экран пользователя (летсплеи, видео YouTube, Twitch, тесты, браузер, игры, лекции).
+Ты непрерывно смотришь на экран пользователя (тесты, браузер, игры, лекции, код, графики, видео).
 
 ТВОЯ ЗАДАЧА — САМОСТОЯТЕЛЬНО ПОНЯТЬ КОНТЕКСТ ЭКРАНА И ВЫДАТЬ СТРОГО НА РУССКОМ ЯЗЫКЕ ОДИН ИЛИ НЕСКОЛЬКО БЛОКОВ:
 
-1. ЕСЛИ НА ЭКРАНЕ КОМПЬЮТЕРНАЯ ИГРА, СТРИМ БЛОГЕРА, ФИЛЬМ ИЛИ СОФТ:
-   Определи, что это за игра/программа, где ее найти и как скачать на ПК.
-   Выведи блок СТРОГО в таком формате:
-   [GAME_INFO]:
-   🎮 Название: <Точное название игры / софта / фильма>
-   📥 Где скачать/найти: <Steam / Epic Games Store / GOG / Официальный сайт>
-   🏷️ Жанр и суть: <Жанр> | <Кратко в 1 предложение, что происходит на экране>
-
-2. ЕСЛИ НА ЭКРАНЕ ТЕСТ, ЗАДАНИЕ НА СООТВЕТСТВИЕ (СОЕДИНЕНИЕ ПАР), ЭКЗАМЕН, ЗАДАЧА, ВИКТОРИНА ИЛИ ВОПРОС:
+1. ЕСЛИ НА ЭКРАНЕ ТЕСТ, ЗАДАНИЕ НА СООТВЕТСТВИЕ (СОЕДИНЕНИЕ ПАР), ЭКЗАМЕН, ЗАДАЧА, ВИКТОРИНА ИЛИ ВОПРОС:
    Реши задание полностью!
    - Если это тест с выбором ответа — укажи правильный вариант.
    - Если это задание на соответствие / соединение пар (слева и справа) — выпиши КАЖДУЮ правильную пару на отдельной строке: «Элемент слева — Элемент справа».
@@ -25,14 +17,15 @@ SYSTEM_PROMPT = """
    [TEST_ANSWER]:
    <Полный правильный ответ или список всех правильных пар по строкам>
 
-3. ЕСЛИ НА ЭКРАНЕ ОБУЧАЮЩЕЕ ВИДЕО, СТАТЬЯ, ЛЕКЦИЯ, ПОДКАСТ ИЛИ НОВОСТИ:
-   Выдели ключевые тезисы строго на русском языке:
-   [SUMMARY]:
-   • Главный факт 1
-   • Главный факт 2
-   • Ключевой вывод
+2. ЕСЛИ НА ЭКРАНЕ КОМПЬЮТЕРНАЯ ИГРА, СТРИМ БЛОГЕРА, ФИЛЬМ ИЛИ СОФТ:
+   Определи, что это за игра/программа, где ее найти и как скачать на ПК.
+   Выведи блок СТРОГО в таком формате:
+   [GAME_INFO]:
+   🎮 Название: <Точное название игры / софта / фильма>
+   📥 Где скачать/найти: <Steam / Epic Games Store / GOG / Официальный сайт>
+   🏷️ Жанр и суть: <Жанр> | <Кратко в 1 предложение, что происходит на экране>
 
-4. ЕСЛИ НА ЭКРАНЕ ГРАФИК КРИПТОВАЛЮТЫ, БИРЖА (BINANCE, BYBIT, TRADINGVIEW, DEXSCREENER, COINMARKETCAP):
+3. ЕСЛИ НА ЭКРАНЕ ГРАФИК КРИПТОВАЛЮТЫ, БИРЖА (BINANCE, BYBIT, TRADINGVIEW, DEXSCREENER, COINMARKETCAP):
    Определи торговую пару, тренд, паттерн и четкий сигнал (LONG / SHORT / ЖДАТЬ):
    [CRYPTO_SIGNAL]:
    🪙 Пара: <Тикер / Монета> (<Таймфрейм>)
@@ -40,6 +33,18 @@ SYSTEM_PROMPT = """
    🎯 Сигнал: <🟢 LONG (Покупка) / 🔴 SHORT (Продажа) / ⚪ ВНЕ РЫНКА>
    ⚡ Вход: <Уровень цен> | 🎯 Тейк: <Цель> | 🛑 Стоп: <Стоп>
    💡 Подсказка: <Краткий совет по сделке в 1-2 предложения>
+
+4. ЕСЛИ НА ЭКРАНЕ ОБУЧАЮЩЕЕ ВИДЕО, СТАТЬЯ, ЛЕКЦИЯ, ПОДКАСТ ИЛИ НОВОСТИ:
+   Выдели ключевые тезисы строго на русском языке:
+   [SUMMARY]:
+   • Главный факт 1
+   • Главный факт 2
+   • Ключевой вывод
+
+5. ЕСЛИ НА ЭКРАНЕ ЛЮБОЙ ДРУГОЙ КОНТЕНТ (рабочий стол, чат, документ, сайт, код или окно программы):
+   Сформулируй четкий полезный ответ, подсказку или вывод по тому, что открыто:
+   [TEST_ANSWER]:
+   <Конкретный полезный вывод, ответ на вопрос на экране или суть содержимого>
 
 ВАЖНО: Пиши ТОЛЬКО на русском языке, без внутренних размышлений на английском. Лаконично, точно и по делу.
 """
@@ -67,11 +72,11 @@ CRYPTO_SYSTEM_PROMPT = """
 GEMINI_FALLBACK_MODELS = [
     "gemini-3.5-flash",
     "gemini-3.6-flash",
-    "gemini-3.7-flash",
-    "gemini-3.8-flash",
-    "gemini-flash-latest",
+    "gemini-2.0-flash",
     "gemini-1.5-flash",
-    "gemini-2.5-flash"
+    "gemini-2.5-flash",
+    "gemini-3.8-flash",
+    "gemini-flash-latest"
 ]
 
 class MultiAIProvider:
@@ -191,13 +196,15 @@ class MultiAIProvider:
                         if text:
                             return {"ok": True, "text": text}
                     elif resp.status_code in (503, 429):
-                        time.sleep(0.7)
+                        time.sleep(0.5)
                         continue
+                    elif resp.status_code in (401, 403):
+                        return {"ok": False, "error": "Неверный API-ключ Gemini"}
                     elif resp.status_code == 404:
                         continue
                 except Exception:
                     continue
-            return {"ok": False, "error": "Google перегружен (503). Повторите через 5 сек (в РФ нужен VPN)"}
+            return {"ok": False, "error": "Сервер Google временно перегружен (503)"}
 
         elif self.current_provider in ("openai", "deepseek"):
             url = "https://api.openai.com/v1/chat/completions" if self.current_provider == "openai" else "https://api.deepseek.com/v1/chat/completions"
@@ -301,14 +308,16 @@ class MultiAIProvider:
                     if text:
                         return {"ok": True, "text": text}
                 elif resp.status_code in (503, 429):
-                    time.sleep(0.7)
+                    time.sleep(0.5)
                     continue
+                elif resp.status_code in (401, 403):
+                    return {"ok": False, "error": "Неверный API-ключ Gemini"}
                 elif resp.status_code == 404:
                     continue
             except Exception:
                 continue
 
-        return {"ok": False, "error": "Google перегружен (503). Повторите через 5 сек (в РФ нужен VPN)"}
+        return {"ok": False, "error": "Сервер Google временно перегружен (503)"}
 
     def analyze_sniper_region(self, jpeg_bytes):
         """
@@ -352,13 +361,15 @@ class MultiAIProvider:
                         if text:
                             return {"ok": True, "text": text}
                     elif resp.status_code in (503, 429):
-                        time.sleep(0.7)
+                        time.sleep(0.5)
                         continue
+                    elif resp.status_code in (401, 403):
+                        return {"ok": False, "error": "Неверный API-ключ Gemini"}
                     elif resp.status_code == 404:
                         continue
                 except Exception:
                     continue
-            return {"ok": False, "error": "Google перегружен (503). Повторите через 5 сек (в РФ нужен VPN)"}
+            return {"ok": False, "error": "Сервер Google временно перегружен (503)"}
 
         elif self.current_provider in ("openai", "deepseek"):
             url = "https://api.openai.com/v1/chat/completions" if self.current_provider == "openai" else "https://api.deepseek.com/v1/chat/completions"
@@ -435,13 +446,15 @@ class MultiAIProvider:
                         if text:
                             return {"ok": True, "text": text}
                     elif resp.status_code in (503, 429):
-                        time.sleep(0.7)
+                        time.sleep(0.5)
                         continue
+                    elif resp.status_code in (401, 403):
+                        return {"ok": False, "error": "Неверный API-ключ Gemini"}
                     elif resp.status_code == 404:
                         continue
                 except Exception:
                     continue
-            return {"ok": False, "error": "Google перегружен (503). Повторите через 5 сек (в РФ нужен VPN)"}
+            return {"ok": False, "error": "Сервер Google временно перегружен (503)"}
 
         elif self.current_provider in ("openai", "deepseek"):
             url = "https://api.openai.com/v1/chat/completions" if self.current_provider == "openai" else "https://api.deepseek.com/v1/chat/completions"
@@ -506,29 +519,29 @@ class MultiAIProvider:
             }
         }
 
-        last_err = "Серверы Google временно недоступны (503)"
+        last_err = "Сервер Google временно недоступен (503)"
         for model_name in GEMINI_FALLBACK_MODELS:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-                resp = requests.post(url, json=payload, timeout=10)
+                resp = requests.post(url, json=payload, timeout=8)
                 if resp.status_code == 200:
                     text = self._extract_clean_gemini_text(resp.json())
                     if text:
                         return {"ok": True, "text": text}
                 elif resp.status_code in (503, 429):
-                    last_err = "Google перегружен (503). Повторите через 5 сек (в РФ/РБ нужен VPN)"
-                    time.sleep(0.7)
+                    last_err = "Сервер Google перегружен (503). Повторите через пару секунд"
+                    time.sleep(0.5)
                     continue
+                elif resp.status_code in (401, 403):
+                    return {"ok": False, "error": "Неверный API-ключ Gemini"}
                 elif resp.status_code == 404:
                     continue
                 elif resp.status_code == 400:
                     try:
                         err_msg = resp.json().get("error", {}).get("message", "")
-                        if "location" in err_msg.lower():
-                            return {"ok": False, "error": "Регион не поддерживается Google. Включите VPN"}
                     except Exception:
                         err_msg = resp.text[:50]
-                    return {"ok": False, "error": f"Ошибка 400: {err_msg[:45]}"}
+                    return {"ok": False, "error": f"Ошибка запроса (400): {err_msg[:45]}"}
                 else:
                     try:
                         err_msg = resp.json().get("error", {}).get("message", "")
@@ -536,7 +549,7 @@ class MultiAIProvider:
                         err_msg = resp.text[:50]
                     return {"ok": False, "error": f"Код {resp.status_code}: {err_msg[:50]}"}
             except requests.exceptions.Timeout:
-                last_err = "Таймаут ожидания, повтор..."
+                last_err = "Таймаут соединения, повтор..."
                 continue
             except Exception as e:
                 last_err = str(e)[:50]

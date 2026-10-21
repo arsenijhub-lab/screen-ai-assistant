@@ -87,14 +87,16 @@ class ScreenEngine:
         return provider, keys
 
     def save_config(self):
-        try:
-            with open(self.config_path, "w", encoding="utf-8") as f:
-                json.dump({
-                    "current_provider": self.ai.current_provider,
-                    "keys": self.ai.keys
-                }, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"Ошибка сохранения config: {e}")
+        targets = set([self.config_path, "config.json"])
+        for p in targets:
+            try:
+                with open(p, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "current_provider": self.ai.current_provider,
+                        "keys": self.ai.keys
+                    }, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                print(f"Ошибка сохранения config в {p}: {e}")
 
     def add_listener(self, callback):
         self.listeners.append(callback)
@@ -438,11 +440,18 @@ class ScreenEngine:
         threading.Thread(target=_worker, daemon=True).start()
 
     def _run_analysis(self, force=False):
-        if not self._analyzing_lock.acquire(blocking=False):
+        acquired = self._analyzing_lock.acquire(blocking=True, timeout=2.5) if force else self._analyzing_lock.acquire(blocking=False)
+        if not acquired:
+            if force:
+                self.status = "● Предыдущий анализ ещё выполняется..."
+                self.notify_listeners()
             return
 
         try:
-            screenshot = ImageGrab.grab()
+            try:
+                screenshot = ImageGrab.grab()
+            except Exception:
+                screenshot = ImageGrab.grab(all_screens=True)
             # Умная проверка изменения экрана (сравнение компактного 32x24 хэша)
             thumb = screenshot.resize((32, 24)).convert("L").tobytes()
             now = time.time()
@@ -451,7 +460,7 @@ class ScreenEngine:
                 return
 
             current_badge = self.ai.PROVIDERS[self.ai.current_provider]["badge"]
-            self.status = f"● Анализ ({current_badge})..."
+            self.status = f"● Анализ экрана ({current_badge})..."
             self.notify_listeners()
 
             width, height = screenshot.size
@@ -484,6 +493,12 @@ class ScreenEngine:
             self._analyzing_lock.release()
 
     def _process_ai_response(self, text):
+        if not text:
+            return
+        
+        raw_text = text.strip()
+
+        # 1. Крипто-сигнал
         if "[CRYPTO_SIGNAL]:" in text:
             crypto_chunk = text.split("[CRYPTO_SIGNAL]:")[1]
             for stop_tag in ["[GAME_INFO]:", "[TEST_ANSWER]:", "[SUMMARY]:"]:
@@ -492,6 +507,7 @@ class ScreenEngine:
             self.latest_crypto = crypto_chunk.strip()
             self.latest_answer = self.latest_crypto
 
+        # 2. Игра / софт / проект
         if "[GAME_INFO]:" in text:
             game_chunk = text.split("[GAME_INFO]:")[1]
             for stop_tag in ["[TEST_ANSWER]:", "[SUMMARY]:", "[CRYPTO_SIGNAL]:"]:
@@ -501,6 +517,8 @@ class ScreenEngine:
         else:
             self.latest_game = ""
 
+        # 3. Тест / Главный ответ
+        has_test_answer = False
         if "[TEST_ANSWER]:" in text:
             ans_chunk = text.split("[TEST_ANSWER]:")[1]
             for stop_tag in ["[GAME_INFO]:", "[SUMMARY]:", "[CRYPTO_SIGNAL]:"]:
@@ -509,17 +527,33 @@ class ScreenEngine:
             ans_clean = ans_chunk.strip()
             # Не перезаписываем свежий ответ на личный вопрос в течение 12 секунд
             recent_manual = (time.time() - getattr(self, "_last_manual_q_time", 0)) < 12
-            if ans_clean and not ans_clean.startswith("<") and not recent_manual:
+            if ans_clean and not recent_manual:
                 self.latest_answer = ans_clean
+                has_test_answer = True
 
+        # 4. Тезисы / Конспект
         if "[SUMMARY]:" in text:
             sum_chunk = text.split("[SUMMARY]:")[1]
             for stop_tag in ["[GAME_INFO]:", "[TEST_ANSWER]:", "[CRYPTO_SIGNAL]:"]:
                 if stop_tag in sum_chunk:
                     sum_chunk = sum_chunk.split(stop_tag)[0]
             self.latest_summary = sum_chunk.strip()
-        elif not self.latest_game and "[TEST_ANSWER]:" not in text and "[CRYPTO_SIGNAL]:" not in text and text.strip():
-            self.latest_summary = text.strip()
+        else:
+            self.latest_summary = raw_text
+
+        # 5. Если тег [TEST_ANSWER] не вернулся, но есть текст — ВСЕГДА выводим его в главный ответ!
+        if not has_test_answer and not self.latest_crypto:
+            recent_manual = (time.time() - getattr(self, "_last_manual_q_time", 0)) < 12
+            if not recent_manual:
+                # Извлекаем чистый текст без тегов
+                fallback_ans = raw_text
+                for tag in ["[SUMMARY]:", "[GAME_INFO]:"]:
+                    if tag in fallback_ans:
+                        fallback_ans = fallback_ans.split(tag)[0].strip()
+                if fallback_ans:
+                    self.latest_answer = fallback_ans
+                elif self.latest_summary:
+                    self.latest_answer = self.latest_summary
 
         # Сохранение в историю для листания
         self.add_history_entry(
